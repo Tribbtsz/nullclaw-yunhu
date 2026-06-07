@@ -40,6 +40,7 @@ type Handler struct {
 
 	started   bool
 	chatTypes map[string]string
+	streamBuf map[string]string
 	mu        sync.Mutex
 }
 
@@ -47,6 +48,7 @@ func NewHandler(transport *jsonrpc.StdioTransport) *Handler {
 	return &Handler{
 		transport: transport,
 		chatTypes: make(map[string]string),
+		streamBuf: make(map[string]string),
 	}
 }
 
@@ -203,7 +205,36 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 		return nil, fmt.Errorf("target is required")
 	}
 
+	if params.Message.Stage == "chunk" {
+		h.streamBuf[params.Message.Target] += params.Message.Text
+		result := SendResult{Accepted: true}
+		return jsonrpc.NewResponse(req.ID, result)
+	}
+
+	if params.Message.Stage == "final" && h.streamBuf[params.Message.Target] != "" {
+		h.streamBuf[params.Message.Target] += params.Message.Text
+		params.Message.Text = h.streamBuf[params.Message.Target]
+		delete(h.streamBuf, params.Message.Target)
+	}
+
 	recvType := h.inferRecvType(params.Message.Target)
+
+	if len(params.Message.Media) == 0 {
+		_, err := h.yunhuClient.SendStream(
+			params.Message.Target,
+			recvType,
+			yunhu.ContentTypeMarkdown,
+			params.Message.Text,
+		)
+		if err != nil {
+			slog.Error("send stream failed", "target", params.Message.Target, "error", err)
+			result := SendResult{Accepted: false}
+			return jsonrpc.NewResponse(req.ID, result)
+		}
+		result := SendResult{Accepted: true}
+		return jsonrpc.NewResponse(req.ID, result)
+	}
+
 	contentType, sendContent := h.buildSendContent(params.Message.Text, params.Message.Media)
 	msgReq := &yunhu.SendMessageRequest{
 		RecvID:      params.Message.Target,

@@ -2,6 +2,7 @@ package yunhu
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -276,5 +277,40 @@ func TestBatchSend(t *testing.T) {
 	}
 	if resp.Data.SuccessCount != "2" {
 		t.Errorf("expected successCount 2, got %s", resp.Data.SuccessCount)
+	}
+}
+
+func TestSendStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("recvId") != "user123" {
+			t.Errorf("expected recvId user123, got %s", r.URL.Query().Get("recvId"))
+		}
+		if r.URL.Query().Get("recvType") != "user" {
+			t.Errorf("expected recvType user, got %s", r.URL.Query().Get("recvType"))
+		}
+		if r.URL.Query().Get("contentType") != "markdown" {
+			t.Errorf("expected contentType markdown, got %s", r.URL.Query().Get("contentType"))
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != "hello" {
+			t.Errorf("expected body 'hello', got %q", string(body))
+		}
+
+		resp := SendStreamResponse{Code: 1, Msg: "success"}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		token:      "test-token",
+		httpClient: server.Client(),
+	}
+	baseURL = server.URL
+	defer func() { baseURL = "https://chat-go.jwzhd.com/open-apis/v1" }()
+
+	_, err := client.SendStream("user123", RecvTypeUser, ContentTypeMarkdown, "hello")
+	if err != nil {
+		t.Fatal(err)
 	}
 }

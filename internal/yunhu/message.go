@@ -86,3 +86,8 @@ type BatchSendMsgInfo struct {
 	RecvID   string `json:"recvId"`
 	RecvType string `json:"recvType"`
 }
+
+type SendStreamResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}

@@ -15,8 +15,8 @@ func TestBuildManifest(t *testing.T) {
 	if !m.Capabilities.Health {
 		t.Error("expected health capability")
 	}
-	if m.Capabilities.Streaming {
-		t.Error("streaming should be false (send-stream not implemented)")
+	if !m.Capabilities.Streaming {
+		t.Error("expected streaming capability")
 	}
 	if !m.Capabilities.SendRich {
 		t.Error("expected send_rich capability")

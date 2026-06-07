@@ -137,6 +137,56 @@ func (c *Client) BatchSend(req *BatchSendRequest) (*BatchSendResponse, error) {
 	return &batchResp, nil
 }
 
+func (c *Client) SendStream(recvID, recvType, contentType, text string) (*SendStreamResponse, error) {
+	pipeR, pipeW := io.Pipe()
+
+	go func() {
+		defer pipeW.Close()
+		runes := []rune(text)
+		for _, r := range runes {
+			if _, err := fmt.Fprintf(pipeW, "%c", r); err != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+
+	return c.sendStreamRequest(recvID, recvType, contentType, pipeR)
+}
+
+func (c *Client) sendStreamRequest(recvID, recvType, contentType string, body io.Reader) (*SendStreamResponse, error) {
+	url := fmt.Sprintf("%s/bot/send-stream?token=%s&recvId=%s&recvType=%s&contentType=%s",
+		baseURL, c.token, recvID, recvType, contentType)
+
+	httpReq, err := http.NewRequest(http.MethodPost, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("create stream request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	httpReq.Header.Set("User-Agent", defaultUserAgent)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("stream request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var streamResp SendStreamResponse
+	if err := json.NewDecoder(resp.Body).Decode(&streamResp); err != nil {
+		return nil, fmt.Errorf("decode stream response: %w", err)
+	}
+
+	if streamResp.Code != 1 {
+		slog.Error("yunhu API send-stream failed",
+			"code", streamResp.Code,
+			"msg", streamResp.Msg,
+		)
+		return &streamResp, fmt.Errorf("yunhu API send-stream error: code=%d msg=%s", streamResp.Code, streamResp.Msg)
+	}
+
+	return &streamResp, nil
+}
+
 func (c *Client) Ping() error {
 	req, err := http.NewRequest(http.MethodGet, baseURL, nil)
 	if err != nil {
