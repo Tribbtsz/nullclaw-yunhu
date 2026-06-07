@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "header": {
+    "eventId": "evt_test_002",
+    "eventTime": 1700000000000,
+    "eventType": "message.receive.instruction"
+  },
+  "event": {
+    "sender": {
+      "senderId": "user_002",
+      "senderType": "user",
+      "senderUserLevel": "member",
+      "senderNickname": "指令用户"
+    },
+    "chat": {
+      "chatId": "user_002",
+      "chatType": "bot"
+    },
+    "message": {
+      "msgId": "msg_test_002",
+      "chatType": "bot",
+      "contentType": "text",
+      "commandId": 1,
+      "commandName": "查询",
+      "content": {
+        "text": "/查询 天气"
+      }
+    }
+  }
+}

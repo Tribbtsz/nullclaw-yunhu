@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":5,"method":"send_rich","params":{"runtime":{"name":"yunhu","account_id":"main"},"message":{"target":"user_abc123","text":"请选择一项","attachments":[],"choices":[{"id":"opt1","label":"选项1","submit_text":"opt1"},{"id":"opt2","label":"选项2","submit_text":"opt2"}]}}}

@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "header": {
+    "eventId": "evt_test_003",
+    "eventTime": 1700000000000,
+    "eventType": "button.report.inline"
+  },
+  "event": {
+    "userId": "user_003",
+    "recvId": "group_001",
+    "recvType": "group",
+    "value": "opt1"
+  }
+}

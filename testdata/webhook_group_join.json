@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "header": {
+    "eventId": "evt_test_004",
+    "eventTime": 1700000000000,
+    "eventType": "group.join"
+  },
+  "event": {
+    "userId": "user_004",
+    "groupId": "group_002",
+    "groupName": "测试群"
+  }
+}

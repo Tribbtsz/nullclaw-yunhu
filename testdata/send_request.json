@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":4,"method":"send","params":{"runtime":{"name":"yunhu","account_id":"main"},"message":{"target":"user_abc123","text":"Hello from bot!","stage":"final","media":[]}}}

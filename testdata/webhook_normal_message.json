@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "header": {
+    "eventId": "evt_test_001",
+    "eventTime": 1700000000000,
+    "eventType": "message.receive.normal"
+  },
+  "event": {
+    "sender": {
+      "senderId": "user_001",
+      "senderType": "user",
+      "senderUserLevel": "member",
+      "senderNickname": "测试用户"
+    },
+    "chat": {
+      "chatId": "group_001",
+      "chatType": "group"
+    },
+    "message": {
+      "msgId": "msg_test_001",
+      "chatType": "group",
+      "contentType": "text",
+      "content": {
+        "text": "你好，这是一条测试消息"
+      }
+    }
+  }
+}

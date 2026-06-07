@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"inbound_message","params":{"message":{"sender_id":"user_001","chat_id":"group_001","text":"你好，这是一条测试消息","media":[],"metadata":{"peer_kind":"group","peer_id":"group_001","account_id":"main"}}}}

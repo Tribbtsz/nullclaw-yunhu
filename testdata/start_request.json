@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":2,"method":"start","params":{"runtime":{"name":"yunhu","account_id":"main","state_dir":""},"config":{"token":"test_token_abcd","webhook_port":18080,"webhook_path":"/webhook/yunhu","webhook_public_url":"https://example.com"}}}

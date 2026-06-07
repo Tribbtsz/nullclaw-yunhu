@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "header": {
+    "eventId": "evt_test_005",
+    "eventTime": 1700000000000,
+    "eventType": "bot.followed"
+  },
+  "event": {
+    "userId": "user_005",
+    "chatId": "user_005",
+    "chatType": "bot"
+  }
+}
