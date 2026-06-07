@@ -26,7 +26,7 @@ func BuildManifest() Manifest {
 		ProtocolVersion: ProtocolVersion,
 		Capabilities: ManifestCapabilities{
 			Health:       true,
-			Streaming:    true,
+			Streaming:    false,
 			SendRich:     true,
 			Typing:       false,
 			Edit:         true,

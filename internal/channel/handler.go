@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,6 +119,19 @@ func (h *Handler) handleStart(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.runtime = &sp.Runtime
 	h.yunhuClient = yunhu.NewClient(cfg.Token)
 
+	if h.runtime.StateDir != "" {
+		if err := os.MkdirAll(h.runtime.StateDir, 0700); err != nil {
+			slog.Warn("failed to create state directory", "path", h.runtime.StateDir, "error", err)
+		} else {
+			pidFile := filepath.Join(h.runtime.StateDir, "yunhu-channel.pid")
+			pidData := fmt.Sprintf("%d\n", os.Getpid())
+			if err := os.WriteFile(pidFile, []byte(pidData), 0600); err != nil {
+				slog.Warn("failed to write pid file", "path", pidFile, "error", err)
+			}
+			slog.Info("state directory initialized", "path", h.runtime.StateDir)
+		}
+	}
+
 	cfg.LogInfo()
 
 	inboundCh := make(chan []byte, 128)
@@ -186,13 +202,12 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	}
 
 	recvType := h.inferRecvType(params.Message.Target)
+	contentType, sendContent := h.buildSendContent(params.Message.Text, params.Message.Media)
 	msgReq := &yunhu.SendMessageRequest{
 		RecvID:      params.Message.Target,
 		RecvType:    recvType,
-		ContentType: yunhu.ContentTypeMarkdown,
-		Content: yunhu.SendContent{
-			Text: params.Message.Text,
-		},
+		ContentType: contentType,
+		Content:     sendContent,
 	}
 
 	sendResp, err := h.yunhuClient.SendMessage(msgReq)
@@ -328,6 +343,13 @@ func (h *Handler) handleHealth(req *jsonrpc.Request) (*jsonrpc.Response, error) 
 		healthy = false
 	}
 
+	if h.yunhuClient != nil {
+		if err := h.yunhuClient.Ping(); err != nil {
+			slog.Warn("yunhu API health check failed", "error", err)
+			healthy = false
+		}
+	}
+
 	return jsonrpc.NewResponse(req.ID, HealthResult{Healthy: healthy})
 }
 
@@ -381,4 +403,23 @@ func (h *Handler) inferRecvType(target string) string {
 		return t
 	}
 	return yunhu.RecvTypeUser
+}
+
+func (h *Handler) buildSendContent(text string, media []string) (string, yunhu.SendContent) {
+	if len(media) == 0 {
+		return yunhu.ContentTypeMarkdown, yunhu.SendContent{Text: text}
+	}
+
+	firstMedia := media[0]
+	if text == "" && len(media) == 1 {
+		if !strings.Contains(firstMedia, "://") {
+			return yunhu.ContentTypeImage, yunhu.SendContent{ImageKey: firstMedia}
+		}
+	}
+
+	content := text
+	for _, m := range media {
+		content += "\n![](" + m + ")"
+	}
+	return yunhu.ContentTypeMarkdown, yunhu.SendContent{Text: content}
 }
