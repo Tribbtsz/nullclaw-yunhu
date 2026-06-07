@@ -11,12 +11,17 @@ import (
 	"sync"
 )
 
+// ErrParse is returned by ReadRequest when the input is not valid JSON.
+var ErrParse = fmt.Errorf("parse error")
+
+// StdioTransport handles reading/writing JSON-RPC messages over stdin/stdout.
 type StdioTransport struct {
 	reader  *bufio.Scanner
 	writer  io.Writer
 	writeMu sync.Mutex
 }
 
+// NewStdioTransport creates a transport reading from stdin and writing to stdout.
 func NewStdioTransport() *StdioTransport {
 	s := bufio.NewScanner(os.Stdin)
 	buf := make([]byte, 0, 256*1024)
@@ -27,8 +32,7 @@ func NewStdioTransport() *StdioTransport {
 	}
 }
 
-var ErrParse = fmt.Errorf("parse error")
-
+// NewStdioTransportWithWriter creates a transport for testing with a custom writer.
 func NewStdioTransportWithWriter(w io.Writer) *StdioTransport {
 	return &StdioTransport{
 		reader: bufio.NewScanner(strings.NewReader("")),

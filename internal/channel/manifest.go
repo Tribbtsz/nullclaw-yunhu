@@ -1,7 +1,9 @@
 package channel
 
+// ProtocolVersion is the external channel protocol version supported by this plugin.
 const ProtocolVersion = 2
 
+// Manifest describes the plugin's capabilities to nullclaw.
 type Manifest struct {
 	ProtocolVersion int             `json:"protocol_version"`
 	Capabilities    ManifestCapabilities `json:"capabilities"`
@@ -18,6 +20,7 @@ type ManifestCapabilities struct {
 	ReadReceipts bool `json:"read_receipts"`
 }
 
+// BuildManifest returns a Manifest declaring the plugin's supported capabilities.
 func BuildManifest() Manifest {
 	return Manifest{
 		ProtocolVersion: ProtocolVersion,

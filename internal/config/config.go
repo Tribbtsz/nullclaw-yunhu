@@ -7,6 +7,7 @@ import (
 	"os"
 )
 
+// Config holds the plugin configuration parsed from the start request.
 type Config struct {
 	Token            string `json:"token"`
 	WebhookPort      int    `json:"webhook_port"`
@@ -14,6 +15,7 @@ type Config struct {
 	WebhookPublicURL string `json:"webhook_public_url"`
 }
 
+// Runtime holds the runtime metadata passed by nullclaw in the start request.
 type Runtime struct {
 	Name      string `json:"name"`
 	AccountID string `json:"account_id"`
