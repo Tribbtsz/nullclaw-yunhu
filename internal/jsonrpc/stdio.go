@@ -18,8 +18,11 @@ type StdioTransport struct {
 }
 
 func NewStdioTransport() *StdioTransport {
+	s := bufio.NewScanner(os.Stdin)
+	buf := make([]byte, 0, 256*1024)
+	s.Buffer(buf, 256*1024)
 	return &StdioTransport{
-		reader: bufio.NewScanner(os.Stdin),
+		reader: s,
 		writer: os.Stdout,
 	}
 }

@@ -75,3 +75,37 @@ func TestHandler_Health(t *testing.T) {
 
 	h.Handle(nil, req)
 }
+
+func TestHandler_TrackChatType(t *testing.T) {
+	transport, _ := newTestTransport()
+	h := NewHandler(transport)
+
+	h.trackChatType([]byte(`{"jsonrpc":"2.0","method":"inbound_message","params":{"message":{"sender_id":"u1","chat_id":"group_001","text":"hi","metadata":{"peer_kind":"group","peer_id":"group_001","account_id":"main"}}}}`))
+
+	recvType := h.inferRecvType("group_001")
+	if recvType != "group" {
+		t.Errorf("expected recvType group, got %s", recvType)
+	}
+}
+
+func TestHandler_TrackChatType_Direct(t *testing.T) {
+	transport, _ := newTestTransport()
+	h := NewHandler(transport)
+
+	h.trackChatType([]byte(`{"jsonrpc":"2.0","method":"inbound_message","params":{"message":{"sender_id":"u1","chat_id":"user_001","text":"hi","metadata":{"peer_kind":"direct","peer_id":"user_001","account_id":"main"}}}}`))
+
+	recvType := h.inferRecvType("user_001")
+	if recvType != "user" {
+		t.Errorf("expected recvType user, got %s", recvType)
+	}
+}
+
+func TestHandler_InferRecvType_Unknown(t *testing.T) {
+	transport, _ := newTestTransport()
+	h := NewHandler(transport)
+
+	recvType := h.inferRecvType("unknown_id")
+	if recvType != "user" {
+		t.Errorf("expected default recvType user, got %s", recvType)
+	}
+}
