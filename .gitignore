@@ -1,0 +1,15 @@
+# yunhu-channel binary
+yunhu-channel
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.log
