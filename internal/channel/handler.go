@@ -478,6 +478,14 @@ func (h *Handler) inferRecvType(target string) string {
 	return yunhu.RecvTypeUser
 }
 
+// buildSendContent 根据 text 和 media 决定消息的 contentType 和内容。
+//
+// media 中的每一项可以是：
+//   - 已上传的文件 key（不含 "://"）— 用于图片/视频/文件类型的消息
+//   - 公开 URL（含 "://"）— 以 markdown 图片形式嵌入到文本中
+//
+// 图片/视频/文件需要先调用 Upload 接口拿到 key，
+// 不能直接传 URL 给 imageKey/videoKey/fileKey。
 func (h *Handler) buildSendContent(text string, media []string) (string, yunhu.SendContent) {
 	if len(media) == 0 {
 		return yunhu.ContentTypeMarkdown, yunhu.SendContent{Text: text}

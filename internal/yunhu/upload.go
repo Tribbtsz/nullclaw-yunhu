@@ -23,6 +23,23 @@ type UploadData struct {
 	FileKey  string `json:"fileKey,omitempty"`
 }
 
+// Upload 将本地文件上传到云湖，返回文件 key。
+//
+// uploadType 可选值: "image" / "video" / "file"
+//
+// 拿到 key 后通过发送消息接口的 imageKey/videoKey/fileKey 字段发送：
+//
+//	client.Upload("image", "/path/to/photo.png")
+//	// 返回的 UploadResponse.Data.ImageKey 用于发送消息
+//	client.SendMessage(&SendMessageRequest{
+//	    RecvID:      target,
+//	    RecvType:    recvType,
+//	    ContentType: ContentTypeImage,
+//	    Content:     SendContent{ImageKey: imageKey},
+//	})
+//
+// 注意：不能直接传公开 URL 给 imageKey/videoKey/fileKey，
+// 必须通过此接口上传拿到 key 后再发送。
 func (c *Client) Upload(uploadType string, filePath string) (*UploadResponse, error) {
 	url := fmt.Sprintf("%s/%s/upload?token=%s", baseURL, uploadType, c.token)
 
