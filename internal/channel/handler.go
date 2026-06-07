@@ -152,6 +152,11 @@ func (h *Handler) handleStart(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in inbound notification goroutine", "recover", r)
+			}
+		}()
 		for notification := range inboundCh {
 			h.trackChatType(notification)
 			if err := h.transport.WriteRaw(notification); err != nil {

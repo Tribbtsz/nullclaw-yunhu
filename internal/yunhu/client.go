@@ -142,6 +142,11 @@ func (c *Client) SendStream(recvID, recvType, contentType, text string) (*SendSt
 
 	go func() {
 		defer pipeW.Close()
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in SendStream goroutine", "recover", r)
+			}
+		}()
 		runes := []rune(text)
 		for _, r := range runes {
 			if _, err := fmt.Fprintf(pipeW, "%c", r); err != nil {

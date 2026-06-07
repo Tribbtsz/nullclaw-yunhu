@@ -45,6 +45,13 @@ func (s *Server) Start() error {
 	s.running = true
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.mu.Lock()
+				s.running = false
+				s.mu.Unlock()
+			}
+		}()
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.mu.Lock()
 			s.running = false
