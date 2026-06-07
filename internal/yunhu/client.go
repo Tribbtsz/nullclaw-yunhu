@@ -87,16 +87,19 @@ func (c *Client) EditMessage(req *EditMessageRequest) (*EditMessageResponse, err
 }
 
 func (c *Client) Ping() error {
-	resp, err := c.doPost(baseURL+"/bot/send?token="+c.token, &SendMessageRequest{
-		RecvID:      "__ping__",
-		RecvType:    RecvTypeUser,
-		ContentType: ContentTypeText,
-		Content:     SendContent{Text: ""},
-	})
+	req, err := http.NewRequest(http.MethodGet, baseURL, nil)
+	if err != nil {
+		return fmt.Errorf("ping failed: %w", err)
+	}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("ping failed: %w", err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("ping returned status %d", resp.StatusCode)
+	}
 	return nil
 }
 
