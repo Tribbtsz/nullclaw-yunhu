@@ -24,7 +24,7 @@ func (r *Request) HasID() bool {
 
 type Response struct {
 	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
+	ID      *json.RawMessage `json:"id"`
 	Result  json.RawMessage  `json:"result,omitempty"`
 	Error   *RPCError        `json:"error,omitempty"`
 }

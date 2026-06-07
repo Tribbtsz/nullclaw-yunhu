@@ -27,6 +27,8 @@ func NewStdioTransport() *StdioTransport {
 	}
 }
 
+var ErrParse = fmt.Errorf("parse error")
+
 func NewStdioTransportWithWriter(w io.Writer) *StdioTransport {
 	return &StdioTransport{
 		reader: bufio.NewScanner(strings.NewReader("")),
@@ -43,7 +45,7 @@ func (t *StdioTransport) ReadRequest() (*Request, error) {
 		var req Request
 		if err := json.Unmarshal(line, &req); err != nil {
 			slog.Error("failed to parse JSON-RPC request", "error", err)
-			return nil, fmt.Errorf("%w: %v", errParseError, err)
+			return nil, fmt.Errorf("%w: %v", ErrParse, err)
 		}
 		return &req, nil
 	}
@@ -81,5 +83,3 @@ func (t *StdioTransport) writeLine(data []byte) error {
 	}
 	return nil
 }
-
-var errParseError = fmt.Errorf("parse error")
