@@ -29,19 +29,21 @@ type InboundMessagePayload struct {
 }
 
 type Handler struct {
-	transport  *jsonrpc.StdioTransport
-	config     *config.Config
-	runtime    *config.Runtime
+	transport   *jsonrpc.StdioTransport
+	config      *config.Config
+	runtime     *config.Runtime
 	yunhuClient *yunhu.Client
-	webhookSrv *webhook.Server
+	webhookSrv  *webhook.Server
 
 	started   bool
+	chatTypes map[string]string
 	mu        sync.Mutex
 }
 
 func NewHandler(transport *jsonrpc.StdioTransport) *Handler {
 	return &Handler{
 		transport: transport,
+		chatTypes: make(map[string]string),
 	}
 }
 
@@ -131,6 +133,7 @@ func (h *Handler) handleStart(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 
 	go func() {
 		for notification := range inboundCh {
+			h.trackChatType(notification)
 			if err := h.transport.WriteRaw(notification); err != nil {
 				slog.Error("failed to write inbound notification", "error", err)
 			}
@@ -182,7 +185,7 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 		return nil, fmt.Errorf("target is required")
 	}
 
-	recvType := inferRecvType(params.Message.Target)
+	recvType := h.inferRecvType(params.Message.Target)
 	msgReq := &yunhu.SendMessageRequest{
 		RecvID:      params.Message.Target,
 		RecvType:    recvType,
@@ -241,7 +244,7 @@ func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error
 		})
 	}
 
-	recvType := inferRecvType(params.Message.Target)
+	recvType := h.inferRecvType(params.Message.Target)
 	msgReq := &yunhu.SendMessageRequest{
 		RecvID:      params.Message.Target,
 		RecvType:    recvType,
@@ -287,7 +290,7 @@ func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, er
 		return nil, fmt.Errorf("target and message_id are required")
 	}
 
-	recvType := inferRecvType(params.Message.Target)
+	recvType := h.inferRecvType(params.Message.Target)
 	editReq := &yunhu.EditMessageRequest{
 		MsgID:       params.Message.MessageID,
 		RecvID:      params.Message.Target,
@@ -337,6 +340,40 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func inferRecvType(target string) string {
+func (h *Handler) trackChatType(notification []byte) {
+	var notif struct {
+		Params struct {
+			Message struct {
+				ChatID   string                 `json:"chat_id"`
+				Metadata map[string]interface{} `json:"metadata"`
+			} `json:"message"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(notification, &notif); err != nil {
+		return
+	}
+	msg := notif.Params.Message
+	if msg.ChatID == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if msg.Metadata != nil {
+		if pk, ok := msg.Metadata["peer_kind"].(string); ok {
+			if pk == "group" {
+				h.chatTypes[msg.ChatID] = yunhu.RecvTypeGroup
+				return
+			}
+		}
+	}
+	h.chatTypes[msg.ChatID] = yunhu.RecvTypeUser
+}
+
+func (h *Handler) inferRecvType(target string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if t, ok := h.chatTypes[target]; ok {
+		return t
+	}
 	return yunhu.RecvTypeUser
 }
