@@ -71,6 +71,8 @@ func (h *Handler) Handle(ctx context.Context, req *jsonrpc.Request) {
 		resp, err = h.handleSendRich(req)
 	case "edit_message":
 		resp, err = h.handleEditMessage(req)
+	case "delete_message":
+		resp, err = h.handleDeleteMessage(req)
 	case "health":
 		resp, err = h.handleHealth(req)
 	default:
@@ -327,6 +329,46 @@ func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, er
 	}
 
 	return jsonrpc.NewResponse(req.ID, EditResult{Accepted: true})
+}
+
+func (h *Handler) handleDeleteMessage(req *jsonrpc.Request) (*jsonrpc.Response, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.started || h.yunhuClient == nil {
+		return nil, fmt.Errorf("channel not started")
+	}
+
+	var params struct {
+		Message struct {
+			Target    string `json:"target"`
+			MessageID string `json:"message_id"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, fmt.Errorf("parse delete_message params: %w", err)
+	}
+
+	if params.Message.Target == "" || params.Message.MessageID == "" {
+		return nil, fmt.Errorf("target and message_id are required")
+	}
+
+	chatType := yunhu.ChatTypeBot
+	if h.inferRecvType(params.Message.Target) == yunhu.RecvTypeGroup {
+		chatType = yunhu.ChatTypeGroup
+	}
+
+	_, err := h.yunhuClient.RecallMessage(&yunhu.RecallMessageRequest{
+		MsgID:    params.Message.MessageID,
+		ChatType: chatType,
+		ChatID:   params.Message.Target,
+	})
+	if err != nil {
+		slog.Error("delete message failed", "message_id", params.Message.MessageID, "error", err)
+		return jsonrpc.NewResponse(req.ID, DeleteResult{Accepted: false})
+	}
+
+	return jsonrpc.NewResponse(req.ID, DeleteResult{Accepted: true})
 }
 
 func (h *Handler) handleHealth(req *jsonrpc.Request) (*jsonrpc.Response, error) {

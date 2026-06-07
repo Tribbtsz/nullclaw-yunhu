@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":8,"method":"delete_message","params":{"runtime":{"name":"yunhu","account_id":"main"},"message":{"target":"user_abc123","message_id":"msg_xxxx"}}}

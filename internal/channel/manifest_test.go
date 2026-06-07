@@ -27,8 +27,8 @@ func TestBuildManifest(t *testing.T) {
 	if m.Capabilities.Typing {
 		t.Error("typing should be false")
 	}
-	if m.Capabilities.Delete {
-		t.Error("delete should be false")
+	if !m.Capabilities.Delete {
+		t.Error("expected delete capability")
 	}
 	if m.Capabilities.Reactions {
 		t.Error("reactions should be false")
@@ -126,6 +126,17 @@ func TestHealthResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) != `{"healthy":true}` {
+		t.Errorf("unexpected json: %s", string(data))
+	}
+}
+
+func TestDeleteResult(t *testing.T) {
+	result := DeleteResult{Accepted: true}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"accepted":true}` {
 		t.Errorf("unexpected json: %s", string(data))
 	}
 }

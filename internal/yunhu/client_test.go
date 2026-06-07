@@ -192,3 +192,89 @@ func TestSendMessage_WithButtons(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecallMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req RecallMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.MsgID != "msg_to_delete" {
+			t.Errorf("expected msgId msg_to_delete, got %s", req.MsgID)
+		}
+		if req.ChatType != "user" {
+			t.Errorf("expected chatType user, got %s", req.ChatType)
+		}
+
+		resp := RecallMessageResponse{Code: 1, Msg: "success"}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		token:      "test-token",
+		httpClient: server.Client(),
+	}
+	baseURL = server.URL
+	defer func() { baseURL = "https://chat-go.jwzhd.com/open-apis/v1" }()
+
+	_, err := client.RecallMessage(&RecallMessageRequest{
+		MsgID:    "msg_to_delete",
+		ChatType: "user",
+		ChatID:   "user123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBatchSend(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req BatchSendRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if len(req.RecvIDs) != 2 {
+			t.Errorf("expected 2 recvIds, got %d", len(req.RecvIDs))
+		}
+		if req.Content.Text != "batch hello" {
+			t.Errorf("expected text 'batch hello', got %s", req.Content.Text)
+		}
+
+		resp := BatchSendResponse{
+			Code: 1,
+			Msg:  "success",
+			Data: &BatchSendData{
+				SuccessCount: "2",
+				SuccessList: []BatchSendMsgInfo{
+					{MsgID: "m1", RecvID: "u1", RecvType: "user"},
+					{MsgID: "m2", RecvID: "u2", RecvType: "user"},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		token:      "test-token",
+		httpClient: server.Client(),
+	}
+	baseURL = server.URL
+	defer func() { baseURL = "https://chat-go.jwzhd.com/open-apis/v1" }()
+
+	resp, err := client.BatchSend(&BatchSendRequest{
+		RecvIDs:     []string{"u1", "u2"},
+		RecvType:    RecvTypeUser,
+		ContentType: ContentTypeMarkdown,
+		Content: SendContent{
+			Text: "batch hello",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Data.SuccessCount != "2" {
+		t.Errorf("expected successCount 2, got %s", resp.Data.SuccessCount)
+	}
+}

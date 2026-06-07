@@ -30,7 +30,7 @@ func BuildManifest() Manifest {
 			SendRich:     true,
 			Typing:       false,
 			Edit:         true,
-			Delete:       false,
+			Delete:       true,
 			Reactions:    false,
 			ReadReceipts: false,
 		},
@@ -51,6 +51,10 @@ type SendResult struct {
 }
 
 type EditResult struct {
+	Accepted bool `json:"accepted"`
+}
+
+type DeleteResult struct {
 	Accepted bool `json:"accepted"`
 }
 

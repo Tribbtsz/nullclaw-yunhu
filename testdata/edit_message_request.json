@@ -1,1 +1,2 @@
 {"jsonrpc":"2.0","id":7,"method":"edit_message","params":{"runtime":{"name":"yunhu","account_id":"main"},"message":{"target":"user_abc123","message_id":"msg_xxxx","text":"编辑后的内容"}}}
+

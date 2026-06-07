@@ -86,6 +86,57 @@ func (c *Client) EditMessage(req *EditMessageRequest) (*EditMessageResponse, err
 	return &editResp, nil
 }
 
+func (c *Client) RecallMessage(req *RecallMessageRequest) (*RecallMessageResponse, error) {
+	url := fmt.Sprintf("%s/bot/recall?token=%s", baseURL, c.token)
+
+	resp, err := c.doPost(url, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var recallResp RecallMessageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&recallResp); err != nil {
+		return nil, fmt.Errorf("decode recall response: %w", err)
+	}
+
+	if recallResp.Code != 1 {
+		slog.Error("yunhu API recall failed",
+			"code", recallResp.Code,
+			"msg", recallResp.Msg,
+			"msgId", req.MsgID,
+		)
+		return &recallResp, fmt.Errorf("yunhu API recall error: code=%d msg=%s", recallResp.Code, recallResp.Msg)
+	}
+
+	return &recallResp, nil
+}
+
+func (c *Client) BatchSend(req *BatchSendRequest) (*BatchSendResponse, error) {
+	url := fmt.Sprintf("%s/bot/batch_send?token=%s", baseURL, c.token)
+
+	resp, err := c.doPost(url, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var batchResp BatchSendResponse
+	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
+		return nil, fmt.Errorf("decode batch_send response: %w", err)
+	}
+
+	if batchResp.Code != 1 {
+		slog.Error("yunhu API batch_send failed",
+			"code", batchResp.Code,
+			"msg", batchResp.Msg,
+		)
+		return &batchResp, fmt.Errorf("yunhu API batch_send error: code=%d msg=%s", batchResp.Code, batchResp.Msg)
+	}
+
+	return &batchResp, nil
+}
+
 func (c *Client) Ping() error {
 	req, err := http.NewRequest(http.MethodGet, baseURL, nil)
 	if err != nil {

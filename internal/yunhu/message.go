@@ -51,3 +51,38 @@ type EditMessageResponse struct {
 	Msg  string           `json:"msg"`
 	Data *SendMessageData `json:"data,omitempty"`
 }
+
+type RecallMessageRequest struct {
+	MsgID    string `json:"msgId"`
+	ChatType string `json:"chatType"`
+	ChatID   string `json:"chatId"`
+}
+
+type RecallMessageResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
+type BatchSendRequest struct {
+	RecvIDs     []string    `json:"recvIds"`
+	RecvType    string      `json:"recvType"`
+	ContentType string      `json:"contentType"`
+	Content     SendContent `json:"content"`
+}
+
+type BatchSendResponse struct {
+	Code int             `json:"code"`
+	Msg  string          `json:"msg"`
+	Data *BatchSendData  `json:"data,omitempty"`
+}
+
+type BatchSendData struct {
+	SuccessCount string              `json:"successCount"`
+	SuccessList  []BatchSendMsgInfo  `json:"successList"`
+}
+
+type BatchSendMsgInfo struct {
+	MsgID    string `json:"msgId"`
+	RecvID   string `json:"recvId"`
+	RecvType string `json:"recvType"`
+}
