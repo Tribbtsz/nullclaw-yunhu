@@ -42,6 +42,27 @@ Binary will be at `./yunhu-channel`.
 
 Set the Yunhu Bot webhook URL in the Yunhu console to `https://your-domain.com/webhook/yunhu`.
 
+## Quick Test
+
+**Protocol demo** (no token needed, validates JSON-RPC handshake):
+```bash
+make build && bash demo.sh
+```
+
+**Send a test message** (needs real bot token):
+```bash
+# 1. Get your Bot Token from https://www.yhchat.com Console
+# 2. Get your user/group ID from the Console → Bot → Message log
+make build
+YUNHU_BOT_TOKEN=your_token bash demo_full.sh your_user_or_group_id
+```
+
+**Full end-to-end** (with real phone test):
+1. Deploy on a server with a public IP, or use [ngrok](https://ngrok.com) for tunneling
+2. Configure nullclaw with the plugin (see above)
+3. Set your webhook URL in Yunhu console to `https://your-domain.com/webhook/yunhu`
+4. Start nullclaw → plugin starts → webhook server listens → messages flow
+
 ## Development
 
 ```bash
