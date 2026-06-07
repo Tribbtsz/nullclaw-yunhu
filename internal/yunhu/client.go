@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -14,11 +15,13 @@ var (
 	baseURL          = "https://chat-go.jwzhd.com/open-apis/v1"
 	defaultTimeout   = 30 * time.Second
 	defaultUserAgent = "yunhu-channel/1.0"
+	defaultRetries   = 2
 )
 
 type Client struct {
 	token      string
 	httpClient *http.Client
+	maxRetries int
 }
 
 func NewClient(token string) *Client {
@@ -27,6 +30,7 @@ func NewClient(token string) *Client {
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
+		maxRetries: defaultRetries,
 	}
 }
 
@@ -83,41 +87,42 @@ func (c *Client) EditMessage(req *EditMessageRequest) (*EditMessageResponse, err
 }
 
 func (c *Client) Ping() error {
-	url := fmt.Sprintf("%s/bot/send?token=%s", baseURL, c.token)
-	pingReq := &SendMessageRequest{
+	resp, err := c.doPost(baseURL+"/bot/send?token="+c.token, &SendMessageRequest{
 		RecvID:      "__ping__",
 		RecvType:    RecvTypeUser,
 		ContentType: ContentTypeText,
-		Content: SendContent{
-			Text: "",
-		},
-	}
-
-	body, err := json.Marshal(pingReq)
-	if err != nil {
-		return fmt.Errorf("marshal ping: %w", err)
-	}
-
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create ping request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
-	httpReq.Header.Set("User-Agent", defaultUserAgent)
-
-	resp, err := c.httpClient.Do(httpReq)
+		Content:     SendContent{Text: ""},
+	})
 	if err != nil {
 		return fmt.Errorf("ping failed: %w", err)
 	}
 	resp.Body.Close()
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	return fmt.Errorf("ping returned status %d", resp.StatusCode)
+	return nil
 }
 
 func (c *Client) doPost(url string, body interface{}) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt) * time.Second
+			slog.Warn("retrying yunhu API request", "attempt", attempt, "backoff", backoff)
+			time.Sleep(backoff)
+		}
+
+		resp, err := c.doPostOnce(url, body)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+
+		if !isRetryable(err) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("retry exhausted: %w", lastErr)
+}
+
+func (c *Client) doPostOnce(url string, body interface{}) (*http.Response, error) {
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -142,4 +147,14 @@ func (c *Client) doPost(url string, body interface{}) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+func isRetryable(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "status 5") ||
+		strings.Contains(msg, "status 429")
 }

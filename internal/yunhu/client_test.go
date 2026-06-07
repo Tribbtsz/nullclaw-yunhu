@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -103,7 +104,7 @@ func TestSendMessage_ErrorResponse(t *testing.T) {
 
 func TestEditMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !stringsContains(r.URL.Path, "/bot/edit") {
+		if !strings.Contains(r.URL.Path, "/bot/edit") {
 			t.Errorf("expected /bot/edit path, got %s", r.URL.Path)
 		}
 
@@ -190,13 +191,4 @@ func TestSendMessage_WithButtons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-}
-
-func stringsContains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
