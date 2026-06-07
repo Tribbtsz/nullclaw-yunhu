@@ -197,7 +197,9 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 
 	sendResp, err := h.yunhuClient.SendMessage(msgReq)
 	if err != nil {
-		return nil, err
+		slog.Error("send message failed", "target", params.Message.Target, "error", err)
+		result := SendResult{Accepted: false}
+		return jsonrpc.NewResponse(req.ID, result)
 	}
 
 	result := SendResult{Accepted: true}
@@ -257,7 +259,9 @@ func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error
 
 	sendResp, err := h.yunhuClient.SendMessage(msgReq)
 	if err != nil {
-		return nil, err
+		slog.Error("send rich message failed", "target", params.Message.Target, "error", err)
+		result := SendResult{Accepted: false}
+		return jsonrpc.NewResponse(req.ID, result)
 	}
 
 	result := SendResult{Accepted: true}
@@ -303,7 +307,8 @@ func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, er
 
 	_, err := h.yunhuClient.EditMessage(editReq)
 	if err != nil {
-		return nil, err
+		slog.Error("edit message failed", "message_id", params.Message.MessageID, "error", err)
+		return jsonrpc.NewResponse(req.ID, EditResult{Accepted: false})
 	}
 
 	return jsonrpc.NewResponse(req.ID, EditResult{Accepted: true})
