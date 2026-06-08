@@ -226,7 +226,11 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 		delete(h.streamBuf, params.Message.Target)
 	}
 
-	recvType := h.inferRecvType(params.Message.Target)
+	// Read recvType directly while holding the lock (avoid re-entrant lock)
+	recvType := yunhu.RecvTypeUser
+	if t, ok := h.chatTypes[params.Message.Target]; ok {
+		recvType = t
+	}
 	client := h.yunhuClient
 	target := params.Message.Target
 	text := params.Message.Text
@@ -268,9 +272,9 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 
 func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if !h.started || h.yunhuClient == nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("channel not started")
 	}
 
@@ -287,10 +291,12 @@ func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("parse send_rich params: %w", err)
 	}
 
 	if params.Message.Target == "" {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("target is required")
 	}
 
@@ -303,18 +309,26 @@ func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error
 		})
 	}
 
-	recvType := h.inferRecvType(params.Message.Target)
+	recvType := yunhu.RecvTypeUser
+	if t, ok := h.chatTypes[params.Message.Target]; ok {
+		recvType = t
+	}
+	client := h.yunhuClient
+	target := params.Message.Target
+	text := params.Message.Text
+	h.mu.Unlock()
+
 	msgReq := &yunhu.SendMessageRequest{
-		RecvID:      params.Message.Target,
+		RecvID:      target,
 		RecvType:    recvType,
 		ContentType: yunhu.ContentTypeMarkdown,
 		Content: yunhu.SendContent{
-			Text:    params.Message.Text,
+			Text:    text,
 			Buttons: buttons,
 		},
 	}
 
-	sendResp, err := h.yunhuClient.SendMessage(msgReq)
+	sendResp, err := client.SendMessage(msgReq)
 	if err != nil {
 		slog.Error("send rich message failed", "target", params.Message.Target, "error", err)
 		result := SendResult{Accepted: false}
@@ -330,9 +344,9 @@ func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error
 
 func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if !h.started || h.yunhuClient == nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("channel not started")
 	}
 
@@ -344,25 +358,37 @@ func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, er
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("parse edit_message params: %w", err)
 	}
 
 	if params.Message.Target == "" || params.Message.MessageID == "" {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("target and message_id are required")
 	}
 
-	recvType := h.inferRecvType(params.Message.Target)
+	// Read recvType while holding lock, then unlock before HTTP call
+	recvType := yunhu.RecvTypeUser
+	if t, ok := h.chatTypes[params.Message.Target]; ok {
+		recvType = t
+	}
+	client := h.yunhuClient
+	target := params.Message.Target
+	msgID := params.Message.MessageID
+	text := params.Message.Text
+	h.mu.Unlock()
+
 	editReq := &yunhu.EditMessageRequest{
-		MsgID:       params.Message.MessageID,
-		RecvID:      params.Message.Target,
+		MsgID:       msgID,
+		RecvID:      target,
 		RecvType:    recvType,
 		ContentType: yunhu.ContentTypeMarkdown,
 		Content: yunhu.SendContent{
-			Text: params.Message.Text,
+			Text: text,
 		},
 	}
 
-	_, err := h.yunhuClient.EditMessage(editReq)
+	_, err := client.EditMessage(editReq)
 	if err != nil {
 		slog.Error("edit message failed", "message_id", params.Message.MessageID, "error", err)
 		return jsonrpc.NewResponse(req.ID, EditResult{Accepted: false})
@@ -373,9 +399,9 @@ func (h *Handler) handleEditMessage(req *jsonrpc.Request) (*jsonrpc.Response, er
 
 func (h *Handler) handleDeleteMessage(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if !h.started || h.yunhuClient == nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("channel not started")
 	}
 
@@ -386,22 +412,29 @@ func (h *Handler) handleDeleteMessage(req *jsonrpc.Request) (*jsonrpc.Response, 
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("parse delete_message params: %w", err)
 	}
 
 	if params.Message.Target == "" || params.Message.MessageID == "" {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("target and message_id are required")
 	}
 
 	chatType := yunhu.ChatTypeBot
-	if h.inferRecvType(params.Message.Target) == yunhu.RecvTypeGroup {
+	if t, ok := h.chatTypes[params.Message.Target]; ok && t == yunhu.RecvTypeGroup {
 		chatType = yunhu.ChatTypeGroup
 	}
 
-	_, err := h.yunhuClient.RecallMessage(&yunhu.RecallMessageRequest{
-		MsgID:    params.Message.MessageID,
+	client := h.yunhuClient
+	target := params.Message.Target
+	msgID := params.Message.MessageID
+	h.mu.Unlock()
+
+	_, err := client.RecallMessage(&yunhu.RecallMessageRequest{
+		MsgID:    msgID,
 		ChatType: chatType,
-		ChatID:   params.Message.Target,
+		ChatID:   target,
 	})
 	if err != nil {
 		slog.Error("delete message failed", "message_id", params.Message.MessageID, "error", err)
