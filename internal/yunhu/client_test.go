@@ -280,7 +280,7 @@ func TestBatchSend(t *testing.T) {
 	}
 }
 
-func TestSendStream(t *testing.T) {
+func TestStartStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("recvId") != "user123" {
 			t.Errorf("expected recvId user123, got %s", r.URL.Query().Get("recvId"))
@@ -309,8 +309,17 @@ func TestSendStream(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://chat-go.jwzhd.com/open-apis/v1" }()
 
-	_, err := client.SendStream("user123", RecvTypeUser, ContentTypeMarkdown, "hello")
+	sw, err := client.StartStream("user123", RecvTypeUser, ContentTypeMarkdown)
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = sw.Write([]byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sw.Close(); err != nil {
 		t.Fatal(err)
 	}
 }

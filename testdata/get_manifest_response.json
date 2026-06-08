@@ -1,1 +1,1 @@
-{"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"capabilities":{"health":true,"streaming":true,"send_rich":true,"typing":false,"edit":true,"delete":true,"reactions":false,"read_receipts":false}}}
+{"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"capabilities":{"health":true,"streaming":true,"send_rich":true,"typing":true,"edit":true,"delete":true,"reactions":false,"read_receipts":false}}}
