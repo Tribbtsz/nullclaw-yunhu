@@ -137,59 +137,76 @@ func (c *Client) BatchSend(req *BatchSendRequest) (*BatchSendResponse, error) {
 	return &batchResp, nil
 }
 
-func (c *Client) SendStream(recvID, recvType, contentType, text string) (*SendStreamResponse, error) {
-	pipeR, pipeW := io.Pipe()
-
-	go func() {
-		defer pipeW.Close()
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("panic in SendStream goroutine", "recover", r)
-			}
-		}()
-		runes := []rune(text)
-		for _, r := range runes {
-			if _, err := fmt.Fprintf(pipeW, "%c", r); err != nil {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-	}()
-
-	return c.sendStreamRequest(recvID, recvType, contentType, pipeR)
+// StreamWriter 用于向云湖的流式发送通道写入数据。
+// 调用 Write 写入文本片段，数据会实时通过 SSE 推送到用户手机。
+// 写入完成后调用 Close 关闭连接。
+type StreamWriter struct {
+	pipeW *io.PipeWriter
+	done  chan struct{}
+	err   error
 }
 
-func (c *Client) sendStreamRequest(recvID, recvType, contentType string, body io.Reader) (*SendStreamResponse, error) {
+// Write 写入一段文本到流中，立即推送到用户端。
+func (sw *StreamWriter) Write(data []byte) (int, error) {
+	return sw.pipeW.Write(data)
+}
+
+// Close 完成流式发送，等待云湖 API 响应后返回。
+func (sw *StreamWriter) Close() error {
+	sw.pipeW.Close()
+	<-sw.done
+	return sw.err
+}
+
+// StartStream 开启一个流式消息发送，返回 *StreamWriter。
+// 写入的数据会实时通过 SSE 推送到用户的云湖客户端（类似 ChatGPT 逐字显示效果）。
+func (c *Client) StartStream(recvID, recvType, contentType string) (*StreamWriter, error) {
+	pipeR, pipeW := io.Pipe()
+
 	url := fmt.Sprintf("%s/bot/send-stream?token=%s&recvId=%s&recvType=%s&contentType=%s",
 		baseURL, c.token, recvID, recvType, contentType)
 
-	httpReq, err := http.NewRequest(http.MethodPost, url, body)
+	httpReq, err := http.NewRequest(http.MethodPost, url, pipeR)
 	if err != nil {
+		pipeW.Close()
 		return nil, fmt.Errorf("create stream request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	httpReq.Header.Set("User-Agent", defaultUserAgent)
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("stream request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var streamResp SendStreamResponse
-	if err := json.NewDecoder(resp.Body).Decode(&streamResp); err != nil {
-		return nil, fmt.Errorf("decode stream response: %w", err)
+	sw := &StreamWriter{
+		pipeW: pipeW,
+		done:  make(chan struct{}),
 	}
 
-	if streamResp.Code != 1 {
-		slog.Error("yunhu API send-stream failed",
-			"code", streamResp.Code,
-			"msg", streamResp.Msg,
-		)
-		return &streamResp, fmt.Errorf("yunhu API send-stream error: code=%d msg=%s", streamResp.Code, streamResp.Msg)
-	}
+	go func() {
+		defer close(sw.done)
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in stream request", "recover", r)
+			}
+		}()
 
-	return &streamResp, nil
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			sw.err = fmt.Errorf("stream request: %w", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		var streamResp SendStreamResponse
+		if err := json.NewDecoder(resp.Body).Decode(&streamResp); err != nil {
+			sw.err = fmt.Errorf("decode stream response: %w", err)
+			return
+		}
+
+		if streamResp.Code != 1 {
+			sw.err = fmt.Errorf("yunhu API send-stream error: code=%d msg=%s", streamResp.Code, streamResp.Msg)
+			return
+		}
+	}()
+
+	return sw, nil
 }
 
 func (c *Client) Ping() error {

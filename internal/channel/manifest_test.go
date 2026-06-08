@@ -24,8 +24,8 @@ func TestBuildManifest(t *testing.T) {
 	if !m.Capabilities.Edit {
 		t.Error("expected edit capability")
 	}
-	if m.Capabilities.Typing {
-		t.Error("typing should be false")
+	if !m.Capabilities.Typing {
+		t.Error("typing should be true")
 	}
 	if !m.Capabilities.Delete {
 		t.Error("expected delete capability")

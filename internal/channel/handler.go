@@ -38,17 +38,24 @@ type Handler struct {
 	yunhuClient *yunhu.Client
 	webhookSrv  *webhook.Server
 
-	started   bool
-	chatTypes map[string]string
-	streamBuf map[string]string
-	mu        sync.Mutex
+	started    bool
+	chatTypes  map[string]string
+	streams    map[string]*yunhu.StreamWriter // 活跃的流式连接，按 target 索引
+	streamRecv map[string]string              // 每个流对应的 recvType
+	mu         sync.Mutex
+}
+
+// streamKey 为每个流生成唯一 key（target + recvType）
+func streamKey(target, recvType string) string {
+	return target + "|" + recvType
 }
 
 func NewHandler(transport *jsonrpc.StdioTransport) *Handler {
 	return &Handler{
 		transport: transport,
 		chatTypes: make(map[string]string),
-		streamBuf: make(map[string]string),
+		streams:   make(map[string]*yunhu.StreamWriter),
+		streamRecv: make(map[string]string),
 	}
 }
 
@@ -65,6 +72,8 @@ func (h *Handler) Handle(ctx context.Context, req *jsonrpc.Request) {
 		resp, err = h.handleGetManifest(req)
 	case "start":
 		resp, err = h.handleStart(req)
+	case "start_typing":
+		resp, err = h.handleStartTyping(req)
 	case "stop":
 		resp, err = h.handleStop(req)
 	case "send":
@@ -169,6 +178,11 @@ func (h *Handler) handleStart(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	return jsonrpc.NewResponse(req.ID, StartResult{Started: true})
 }
 
+func (h *Handler) handleStartTyping(req *jsonrpc.Request) (*jsonrpc.Response, error) {
+	// 云湖没有输入中状态 API，接受请求即可
+	return jsonrpc.NewResponse(req.ID, StartResult{Started: true})
+}
+
 func (h *Handler) handleStop(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -180,6 +194,13 @@ func (h *Handler) handleStop(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 			slog.Error("webhook shutdown error", "error", err)
 		}
 		h.webhookSrv = nil
+	}
+
+	// 关闭所有活跃的流式连接
+	for sk, sw := range h.streams {
+		sw.Close()
+		delete(h.streams, sk)
+		delete(h.streamRecv, sk)
 	}
 
 	h.started = false
@@ -212,62 +233,97 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 		return nil, fmt.Errorf("target is required")
 	}
 
-	// Handle streaming chunk (just buffer, no HTTP call)
-	if params.Message.Stage == "chunk" {
-		h.streamBuf[params.Message.Target] += params.Message.Text
-		h.mu.Unlock()
-		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
-	}
-
-	// Merge buffered streaming content
-	if params.Message.Stage == "final" && h.streamBuf[params.Message.Target] != "" {
-		h.streamBuf[params.Message.Target] += params.Message.Text
-		params.Message.Text = h.streamBuf[params.Message.Target]
-		delete(h.streamBuf, params.Message.Target)
-	}
-
-	// Read recvType directly while holding the lock (avoid re-entrant lock)
 	recvType := yunhu.RecvTypeUser
 	if t, ok := h.chatTypes[params.Message.Target]; ok {
 		recvType = t
 	}
-	client := h.yunhuClient
 	target := params.Message.Target
 	text := params.Message.Text
 	media := params.Message.Media
-	h.mu.Unlock()
+	stage := params.Message.Stage
 
-	// HTTP call without holding the lock, so health checks are not blocked
-	if len(media) == 0 {
-		sendReq := &yunhu.SendMessageRequest{
+	// 非流式发送（带媒体附件）走原来的逻辑
+	if len(media) > 0 {
+		client := h.yunhuClient
+		h.mu.Unlock()
+		contentType, sendContent := h.buildSendContent(text, media)
+		msgReq := &yunhu.SendMessageRequest{
 			RecvID:      target,
 			RecvType:    recvType,
-			ContentType: yunhu.ContentTypeMarkdown,
-			Content:     yunhu.SendContent{Text: text},
+			ContentType: contentType,
+			Content:     sendContent,
 		}
-		_, err := client.SendMessage(sendReq)
+		_, err := client.SendMessage(msgReq)
 		if err != nil {
-			slog.Error("send failed", "target", target, "error", err)
+			slog.Error("send message failed", "target", target, "error", err)
 			return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
 		}
 		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
 	}
 
-	contentType, sendContent := h.buildSendContent(text, media)
-	msgReq := &yunhu.SendMessageRequest{
+	// === 流式发送（纯文本）===
+	sk := streamKey(target, recvType)
+
+	if stage == "chunk" || stage == "final" {
+		// 如果是第一个 chunk，开启流式连接
+		if h.streams[sk] == nil {
+			sw, err := h.yunhuClient.StartStream(target, recvType, yunhu.ContentTypeMarkdown)
+			if err != nil {
+				h.mu.Unlock()
+				slog.Error("start stream failed", "target", target, "error", err)
+				return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
+			}
+			h.streams[sk] = sw
+			h.streamRecv[sk] = recvType
+		}
+
+		sw := h.streams[sk]
+		h.mu.Unlock()
+
+		// 写入当前文本片段到流，立即推送到用户手机
+		if text != "" {
+			if _, err := sw.Write([]byte(text)); err != nil {
+				slog.Error("stream write failed", "target", target, "error", err)
+				h.cleanupStream(sk)
+				return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
+			}
+		}
+
+		// final 阶段关闭流
+		if stage == "final" {
+			if err := sw.Close(); err != nil {
+				slog.Error("stream close failed", "target", target, "error", err)
+			}
+			h.cleanupStream(sk)
+		}
+
+		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
+	}
+
+	// 没有 stage 字段的普通消息（兼容旧协议）
+	h.mu.Unlock()
+	if text == "" {
+		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
+	}
+	sendReq := &yunhu.SendMessageRequest{
 		RecvID:      target,
 		RecvType:    recvType,
-		ContentType: contentType,
-		Content:     sendContent,
+		ContentType: yunhu.ContentTypeMarkdown,
+		Content:     yunhu.SendContent{Text: text},
 	}
-
-	_, err := client.SendMessage(msgReq)
+	_, err := h.yunhuClient.SendMessage(sendReq)
 	if err != nil {
-		slog.Error("send message failed", "target", target, "error", err)
+		slog.Error("send failed", "target", target, "error", err)
 		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
 	}
-
 	return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
+}
+
+func (h *Handler) cleanupStream(sk string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.streams, sk)
+	delete(h.streamRecv, sk)
 }
 
 func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error) {
@@ -469,6 +525,13 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 		}
 		h.webhookSrv = nil
 	}
+
+	for sk, sw := range h.streams {
+		sw.Close()
+		delete(h.streams, sk)
+		delete(h.streamRecv, sk)
+	}
+
 	h.started = false
 	return nil
 }

@@ -28,7 +28,7 @@ func BuildManifest() Manifest {
 			Health:       true,
 			Streaming:    true,
 			SendRich:     true,
-			Typing:       false,
+			Typing:       true,
 			Edit:         true,
 			Delete:       true,
 			Reactions:    false,
