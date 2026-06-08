@@ -75,6 +75,16 @@ type InboundMessagePayload struct {
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
+// MarshalJSON ensures Media serializes as [] not null when empty.
+func (p InboundMessagePayload) MarshalJSON() ([]byte, error) {
+	type Alias InboundMessagePayload
+	a := Alias(p)
+	if a.Media == nil {
+		a.Media = []string{}
+	}
+	return json.Marshal(a)
+}
+
 type WebhookHandler struct {
 	config   *config.Config
 	runtime  *config.Runtime

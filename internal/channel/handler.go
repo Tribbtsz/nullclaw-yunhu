@@ -188,9 +188,9 @@ func (h *Handler) handleStop(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 
 func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if !h.started || h.yunhuClient == nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("channel not started")
 	}
 
@@ -203,19 +203,23 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("parse send params: %w", err)
 	}
 
 	if params.Message.Target == "" {
+		h.mu.Unlock()
 		return nil, fmt.Errorf("target is required")
 	}
 
+	// Handle streaming chunk (just buffer, no HTTP call)
 	if params.Message.Stage == "chunk" {
 		h.streamBuf[params.Message.Target] += params.Message.Text
-		result := SendResult{Accepted: true}
-		return jsonrpc.NewResponse(req.ID, result)
+		h.mu.Unlock()
+		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
 	}
 
+	// Merge buffered streaming content
 	if params.Message.Stage == "final" && h.streamBuf[params.Message.Target] != "" {
 		h.streamBuf[params.Message.Target] += params.Message.Text
 		params.Message.Text = h.streamBuf[params.Message.Target]
@@ -223,43 +227,43 @@ func (h *Handler) handleSend(req *jsonrpc.Request) (*jsonrpc.Response, error) {
 	}
 
 	recvType := h.inferRecvType(params.Message.Target)
+	client := h.yunhuClient
+	target := params.Message.Target
+	text := params.Message.Text
+	media := params.Message.Media
+	h.mu.Unlock()
 
-	if len(params.Message.Media) == 0 {
-		_, err := h.yunhuClient.SendStream(
-			params.Message.Target,
-			recvType,
-			yunhu.ContentTypeMarkdown,
-			params.Message.Text,
-		)
-		if err != nil {
-			slog.Error("send stream failed", "target", params.Message.Target, "error", err)
-			result := SendResult{Accepted: false}
-			return jsonrpc.NewResponse(req.ID, result)
+	// HTTP call without holding the lock, so health checks are not blocked
+	if len(media) == 0 {
+		sendReq := &yunhu.SendMessageRequest{
+			RecvID:      target,
+			RecvType:    recvType,
+			ContentType: yunhu.ContentTypeMarkdown,
+			Content:     yunhu.SendContent{Text: text},
 		}
-		result := SendResult{Accepted: true}
-		return jsonrpc.NewResponse(req.ID, result)
+		_, err := client.SendMessage(sendReq)
+		if err != nil {
+			slog.Error("send failed", "target", target, "error", err)
+			return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
+		}
+		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
 	}
 
-	contentType, sendContent := h.buildSendContent(params.Message.Text, params.Message.Media)
+	contentType, sendContent := h.buildSendContent(text, media)
 	msgReq := &yunhu.SendMessageRequest{
-		RecvID:      params.Message.Target,
+		RecvID:      target,
 		RecvType:    recvType,
 		ContentType: contentType,
 		Content:     sendContent,
 	}
 
-	sendResp, err := h.yunhuClient.SendMessage(msgReq)
+	_, err := client.SendMessage(msgReq)
 	if err != nil {
-		slog.Error("send message failed", "target", params.Message.Target, "error", err)
-		result := SendResult{Accepted: false}
-		return jsonrpc.NewResponse(req.ID, result)
+		slog.Error("send message failed", "target", target, "error", err)
+		return jsonrpc.NewResponse(req.ID, SendResult{Accepted: false})
 	}
 
-	result := SendResult{Accepted: true}
-	if sendResp.Data != nil && sendResp.Data.MessageInfo != nil {
-		result.MessageID = sendResp.Data.MessageInfo.MsgID
-	}
-	return jsonrpc.NewResponse(req.ID, result)
+	return jsonrpc.NewResponse(req.ID, SendResult{Accepted: true})
 }
 
 func (h *Handler) handleSendRich(req *jsonrpc.Request) (*jsonrpc.Response, error) {
@@ -413,20 +417,11 @@ func (h *Handler) handleHealth(req *jsonrpc.Request) (*jsonrpc.Response, error) 
 
 	healthy := true
 
-	if h.webhookSrv == nil || !h.webhookSrv.IsRunning() {
-		healthy = false
-	}
-
 	if h.config == nil || h.config.Token == "" {
 		healthy = false
 	}
 
-	if h.yunhuClient != nil {
-		if err := h.yunhuClient.Ping(); err != nil {
-			slog.Warn("yunhu API health check failed", "error", err)
-			healthy = false
-		}
-	}
+	slog.Info("health check", "healthy", healthy, "webhook_running", h.webhookSrv != nil && h.webhookSrv.IsRunning(), "token_configured", h.config != nil && h.config.Token != "")
 
 	return jsonrpc.NewResponse(req.ID, HealthResult{Healthy: healthy})
 }

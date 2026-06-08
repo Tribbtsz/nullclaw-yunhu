@@ -2,6 +2,9 @@ package webhook
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -34,30 +37,57 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	h := NewWebhookHandler(s.config, s.runtime, s.notifyFn)
 	mux.HandleFunc(s.config.WebhookPath, h.ServeHTTP)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	})
 
-	s.httpServer = &http.Server{
-		Addr:         s.config.ListenAddr(),
-		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	}
+	// Try to listen on the configured port with retries.
+	// On Windows, a killed process can take time to release its port.
+	var listenerStarted bool
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			s.mu.Unlock()
+			time.Sleep(time.Duration(attempt) * time.Second)
+			s.mu.Lock()
+		}
 
-	s.running = true
+		listener, err := net.Listen("tcp", s.config.ListenAddr())
+		if err != nil {
+			slog.Warn("failed to listen on port, retrying", "addr", s.config.ListenAddr(), "attempt", attempt+1, "error", err)
+			continue
+		}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
+		s.httpServer = &http.Server{
+			Addr:         s.config.ListenAddr(),
+			Handler:      mux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 3 * time.Second,
+		}
+
+		s.running = true
+		listenerStarted = true
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.mu.Lock()
+					s.running = false
+					s.mu.Unlock()
+				}
+			}()
+			if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 				s.mu.Lock()
 				s.running = false
 				s.mu.Unlock()
 			}
 		}()
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.mu.Lock()
-			s.running = false
-			s.mu.Unlock()
-		}
-	}()
+		break
+	}
+
+	if !listenerStarted {
+		return fmt.Errorf("failed to listen on %s after 5 attempts", s.config.ListenAddr())
+	}
 
 	return nil
 }
