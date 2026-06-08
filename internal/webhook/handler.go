@@ -176,10 +176,17 @@ func (h *WebhookHandler) buildNormalMessage(event *EventMsgVo) *InboundNotificat
 		text = " [文件: " + event.Event.Message.Content.FileName + "]"
 	}
 
+	chatID := event.Event.Chat.ChatID
+	// For direct messages (chatType=bot), chat_id is the bot's ID.
+	// Use sender_id as chat_id so nullclaw replies to the user.
+	if event.Event.Chat.ChatType == "bot" {
+		chatID = event.Event.Sender.SenderID
+	}
+
 	return &InboundNotification{
 		Message: InboundMessagePayload{
 			SenderID: event.Event.Sender.SenderID,
-			ChatID:   event.Event.Chat.ChatID,
+			ChatID:   chatID,
 			Text:     text,
 			Metadata: h.buildMetadata(event),
 		},
@@ -189,10 +196,15 @@ func (h *WebhookHandler) buildNormalMessage(event *EventMsgVo) *InboundNotificat
 func (h *WebhookHandler) buildInstructionMessage(event *EventMsgVo) *InboundNotification {
 	text := event.Event.Message.Content.Text
 
+	chatID := event.Event.Chat.ChatID
+	if event.Event.Chat.ChatType == "bot" {
+		chatID = event.Event.Sender.SenderID
+	}
+
 	return &InboundNotification{
 		Message: InboundMessagePayload{
 			SenderID: event.Event.Sender.SenderID,
-			ChatID:   event.Event.Chat.ChatID,
+			ChatID:   chatID,
 			Text:     text,
 			Metadata: h.buildMetadata(event),
 		},
